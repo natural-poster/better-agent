@@ -2590,8 +2590,11 @@ def _run_python_module_smoke(
         text=True,
         timeout=15,
         env={
+            # Inherit the full parent environment so Windows Winsock/DLL
+            # subsystems initialise correctly in the subprocess, then
+            # override PYTHONPATH to point at the extension's package.
+            **os.environ,
             "PYTHONPATH": os.pathsep.join(python_path_parts),
-            "PATH": os.environ.get("PATH", ""),
         },
     )
     if result.returncode != 0:

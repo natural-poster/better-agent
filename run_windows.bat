@@ -8,13 +8,38 @@ title Better Agent
 set "ROOT=%~dp0"
 cd /d "%ROOT%backend"
 
-echo Stopping previous instance...
-taskkill /F /IM uvicorn.exe >nul 2>&1
-timeout /t 1 /nobreak >nul
+:: ── Kill any previous instance on port 8000 ──────────────────────────
+echo Stopping previous instance on port 8000...
+for /f "tokens=5" %%P in ('netstat -ano 2^>nul ^| findstr /R "TCP.*:8000.*LISTENING"') do (
+    taskkill /F /PID %%P >nul 2>&1
+)
+timeout /t 2 /nobreak >nul
 
-echo Opening browser...
-start "" "chrome.exe" "http://127.0.0.1:8000" 2>nul || start "" "http://127.0.0.1:8000"
-
+:: ── Start backend ─────────────────────────────────────────────────────
 echo Starting Better Agent backend on http://127.0.0.1:8000 ...
-".venv\Scripts\uvicorn.exe" main:app --host 127.0.0.1 --port 8000
-pause
+start "Better Agent Backend" /B ".venv\Scripts\uvicorn.exe" main:app --host 127.0.0.1 --port 8000
+
+:: ── Wait for backend to be ready (poll /health up to 30s) ─────────────
+echo Waiting for backend...
+set /a tries=0
+:wait_loop
+timeout /t 1 /nobreak >nul
+set /a tries+=1
+curl -sf http://127.0.0.1:8000/health >nul 2>&1
+if %errorlevel%==0 goto ready
+if %tries% lss 30 goto wait_loop
+echo Warning: backend did not respond within 30s, opening browser anyway.
+goto open_browser
+
+:ready
+echo Backend is ready.
+
+:open_browser
+echo Opening browser...
+start "" "http://127.0.0.1:8000"
+
+:: ── Keep window open so logs are visible ─────────────────────────────
+echo.
+echo Better Agent is running. Press any key to stop.
+pause >nul
+taskkill /F /FI "WINDOWTITLE eq Better Agent Backend" >nul 2>&1

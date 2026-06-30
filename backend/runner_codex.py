@@ -1047,16 +1047,31 @@ async def _start_app_server(
     )
     client = _AppServerProcess(proc, run_dir, tool_handlers=tool_handlers)
     try:
-        await client.request("initialize", {
-            "clientInfo": {
-                "name": "better_agent",
-                "title": "Better Agent",
-                "version": "1",
-            },
-            "capabilities": {
-                "experimentalApi": True,
-            },
-        })
+        try:
+            await client.request("initialize", {
+                "clientInfo": {
+                    "name": "better_agent",
+                    "title": "Better Agent",
+                    "version": "1",
+                },
+                "capabilities": {
+                    "experimentalApi": True,
+                },
+            })
+        except TimeoutError:
+            # Collect codex stderr to help diagnose why app-server didn't
+            # respond (missing auth, unsupported platform, crash, etc.).
+            stderr_out = ""
+            if proc.stderr is not None:
+                try:
+                    raw = await asyncio.wait_for(proc.stderr.read(4096), timeout=1.0)
+                    stderr_out = raw.decode("utf-8", errors="replace").strip()
+                except Exception:
+                    pass
+            detail = f" stderr: {stderr_out}" if stderr_out else ""
+            raise TimeoutError(
+                f"codex app-server request timed out: initialize{detail}"
+            ) from None
         await client.notify("initialized", {})
         if session_id:
             capability_params = _codex_thread_capability_params(

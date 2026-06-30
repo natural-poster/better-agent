@@ -94,15 +94,66 @@ from runtime_skills import (
 
 
 def _resolve_claude_cli() -> Optional[str]:
-    candidates = [
+    found = shutil.which("claude")
+    if sys.platform == "win32":
+        # On Windows, npm installs claude as a .cmd batch file that in turn
+        # calls the real claude.exe bundled inside the npm package. Running
+        # via cmd.exe adds overhead and pipe-buffering complications. Parse
+        # the .cmd wrapper to find the actual .exe and call it directly.
+        cmd_path = found if (found and found.lower().endswith(".cmd")) else None
+        if cmd_path is None:
+            # shutil.which may have returned the extensionless POSIX script;
+            # look for the .cmd sibling explicitly.
+            npm_cmd = Path(os.path.expandvars("%APPDATA%\\npm\\claude.cmd"))
+            if npm_cmd.is_file():
+                cmd_path = str(npm_cmd)
+        if cmd_path:
+            exe = _parse_exe_from_cmd(Path(cmd_path))
+            if exe:
+                return str(exe)
+            # Fall back to running the .cmd itself if parsing fails.
+            return cmd_path
+        return found
+    if found:
+        return found
+    for p in [
         Path.home() / ".local/bin/claude",
         Path("/usr/local/bin/claude"),
         Path.home() / ".npm-global/bin/claude",
-    ]
-    for p in candidates:
+    ]:
         if p.exists() and p.is_file():
             return str(p)
-    return shutil.which("claude")
+    return None
+
+
+def _parse_exe_from_cmd(cmd_file: "Path") -> "Optional[Path]":
+    """Read a Windows npm .cmd wrapper and return the .exe it delegates to.
+
+    npm generates wrappers like:
+        "%dp0%\\node_modules\\@scope\\pkg\\bin\\tool.exe"   %*
+    We extract the quoted path, expand %dp0% to the .cmd's own directory,
+    and return the result if the .exe actually exists.
+    """
+    import re
+    try:
+        text = cmd_file.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    dp0 = cmd_file.parent
+    # Match the first quoted path ending in .exe on any line.
+    m = re.search(r'"([^"]+\.exe)"', text, re.IGNORECASE)
+    if not m:
+        return None
+    raw = m.group(1)
+    # Expand the %dp0% variable that npm uses.
+    # Plain str.replace (checking lowercased copy for the marker) avoids
+    # re.sub's backslash-escape interpretation in replacement strings, which
+    # would crash on Windows paths containing \U, \A, etc.
+    idx = raw.lower().find('%dp0%')
+    if idx != -1:
+        raw = raw[:idx] + str(dp0) + raw[idx + len('%dp0%'):]
+    exe = Path(os.path.expandvars(raw))
+    return exe if exe.is_file() else None
 
 from claude_agent_sdk import (
     AssistantMessage,
@@ -2102,6 +2153,12 @@ async def _run(run_dir: Path, inputs: dict) -> int:
     )
     plugins = [skill_plugin] if skill_plugin else []
 
+    # On Windows, Node.js-based CLIs start slowly (AV scanning, no preloaded
+    # runtime, slower process creation). Give the initialize handshake extra
+    # time so the first turn doesn't time out before Claude Code responds.
+    # The SDK reads CLAUDE_CODE_STREAM_CLOSE_TIMEOUT (ms) to set the timeout.
+    if sys.platform == "win32" and "CLAUDE_CODE_STREAM_CLOSE_TIMEOUT" not in os.environ:
+        os.environ["CLAUDE_CODE_STREAM_CLOSE_TIMEOUT"] = "180000"
     options = ClaudeAgentOptions(
         mcp_servers=mcp_servers,
         permission_mode="bypassPermissions",
@@ -2116,6 +2173,7 @@ async def _run(run_dir: Path, inputs: dict) -> int:
         cli_path=_resolve_claude_cli(),
         extra_args=extra_args,
         plugins=plugins,
+        stderr=lambda line: logger.warning("claude-cli stderr: %s", line.rstrip()),
         **_runner_options,
     )
 

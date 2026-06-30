@@ -22,6 +22,7 @@ import json
 import logging
 import os
 import sqlite3
+import sys
 import tempfile
 import threading
 import uuid
@@ -85,8 +86,11 @@ def _is_junk_cwd(cwd: str) -> bool:
         p = Path(cwd).expanduser().resolve()
     except OSError:
         return False
-    roots = [paths.ba_home(), Path("/tmp"), Path("/private/tmp"),
-             Path("/var/folders"), Path("/private/var/folders")]
+    roots = [paths.ba_home(), Path(tempfile.gettempdir())]
+    if sys.platform != "win32":
+        # macOS-specific temp roots for Gemini native import path matching.
+        roots += [Path("/tmp"), Path("/private/tmp"),
+                  Path("/var/folders"), Path("/private/var/folders")]
     for r in roots:
         try:
             rr = r.resolve()

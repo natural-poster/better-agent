@@ -316,7 +316,9 @@ _project_match_ready = False
 _project_match_warm_task: asyncio.Task | None = None
 try:
     faulthandler.enable()
-    faulthandler.register(signal.SIGUSR1, file=sys.stderr, all_threads=True, chain=False)
+    # SIGUSR1 is POSIX-only; Windows has no user signals.
+    if hasattr(signal, "SIGUSR1"):
+        faulthandler.register(signal.SIGUSR1, file=sys.stderr, all_threads=True, chain=False)
 except Exception:
     logger.debug("faulthandler enable failed", exc_info=True)
 frontend_logger = logging.getLogger("frontend")
