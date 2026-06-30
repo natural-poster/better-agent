@@ -282,8 +282,11 @@ class _WindowsJobContainment(Containment):
         JOB_OBJECT_QUERY = 0x0004
         h = k32.OpenJobObjectW(JOB_OBJECT_QUERY, False, self._name(run_id))
         if not h:
+            # GetLastError() directly — windll functions don't capture into
+            # ctypes.get_last_error() unless declared with use_last_error=True.
+            err = k32.GetLastError()
             raise ContainmentUnavailable(
-                f"OpenJobObjectW({run_id}) failed: {ctypes.get_last_error()}"
+                f"OpenJobObjectW({run_id}) failed: {err}"
             )
         self._handles[run_id] = h
 

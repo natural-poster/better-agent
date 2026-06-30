@@ -981,8 +981,15 @@ async def _integrate_one(
             # re-opens the cgroup path / job handle.
             if pid:
                 try:
-                    from containment import containment
+                    from containment import containment, ContainmentUnavailable
                     containment().reattach(run_id, int(pid))
+                except ContainmentUnavailable as _cu:
+                    # Job Object / cgroup was destroyed with the old process —
+                    # expected after a backend restart. Log without traceback.
+                    logger.debug(
+                        "containment reattach skipped run=%s pid=%s: %s",
+                        run_id[:8], pid, _cu,
+                    )
                 except Exception:
                     logger.warning(
                         "containment reattach failed run=%s pid=%s",
@@ -1032,8 +1039,13 @@ async def _integrate_one(
                 and hasattr(provider, "_watch_linger_exit")
             ):
                 try:
-                    from containment import containment
+                    from containment import containment, ContainmentUnavailable
                     containment().reattach(run_id, int(pid))
+                except ContainmentUnavailable as _cu:
+                    logger.debug(
+                        "containment reattach skipped run=%s pid=%s: %s",
+                        run_id[:8], pid, _cu,
+                    )
                 except Exception:
                     logger.warning(
                         "containment reattach failed run=%s pid=%s",
