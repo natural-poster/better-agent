@@ -2563,6 +2563,16 @@ def _run_python_module_smoke(
     existing_python_path = os.environ.get("PYTHONPATH")
     if existing_python_path:
         python_path_parts.append(existing_python_path)
+    # On Windows, full importlib.import_module() for packages like `mcp`
+    # pulls in asyncio.windows_events → _overlapped, which fails with
+    # WinError 10106 (Winsock provider init) inside a subprocess even when
+    # the module works fine in the parent process. find_spec() is sufficient
+    # to verify the module is installed without executing its import chain.
+    full_import_expr = (
+        "    pass  # find_spec above is sufficient on Windows\n"
+        if sys.platform == "win32"
+        else "    importlib.import_module(module)\n"
+    )
     code = (
         "import importlib, importlib.util, json, py_compile, sys\n"
         "static = set(json.loads(sys.argv[2]))\n"
@@ -2575,7 +2585,7 @@ def _run_python_module_smoke(
         "        if origin and origin not in {'built-in', 'namespace'}:\n"
         "            py_compile.compile(origin, doraise=True)\n"
         "        continue\n"
-        "    importlib.import_module(module)\n"
+        + full_import_expr
     )
     result = subprocess.run(
         [
