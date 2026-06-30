@@ -12,6 +12,11 @@ interface Props {
    * verbatim + the messageId the selection was anchored to. The
    * caller (App) POSTs /api/sessions/{id}/adv_sync. */
   onAdvSync?: (text: string, messageId: string) => void;
+  /** Ref to the chat scroll container. When the popup dismisses and
+   * focus is stuck on the scroll container (or on the popup's own
+   * comment input), focus is restored to the chat textarea so that
+   * Ctrl+V works immediately after closing the popup. */
+  chatScrollRef?: { readonly current: HTMLElement | null };
 }
 
 interface PopupState {
@@ -58,7 +63,7 @@ async function copyToClipboard(text: string): Promise<void> {
   }
 }
 
-export function SelectionPopup({ onAdd, onAdvSync }: Props) {
+export function SelectionPopup({ onAdd, onAdvSync, chatScrollRef }: Props) {
   const { t } = useTranslation();
   const [popup, setPopup] = useState<PopupState | null>(null);
   const [phase, setPhase] = useState<Phase>("actions");
@@ -97,11 +102,24 @@ export function SelectionPopup({ onAdd, onAdvSync }: Props) {
     if (wasOpen) {
       const sel = window.getSelection();
       if (sel && !sel.isCollapsed) sel.removeAllRanges();
+      // The chat scroll container (tabIndex=0) steals focus from the textarea
+      // when the user drags to select text in messages. If focus ended up on
+      // the scroll container or on this popup's comment input, return it to
+      // the chat textarea so Ctrl+V works immediately after dismissal.
+      const active = document.activeElement as HTMLElement | null;
+      const focusOnScrollContainer =
+        chatScrollRef?.current && active === chatScrollRef.current;
+      const focusOnCommentInput = active === inputRef.current;
+      if (focusOnScrollContainer || focusOnCommentInput) {
+        document
+          .querySelector<HTMLElement>('[data-testid="input-textarea"]')
+          ?.focus();
+      }
     }
     setPopup(null);
     setComment("");
     setPhase("actions");
-  }, [clearPendingHighlight]);
+  }, [clearPendingHighlight, chatScrollRef]);
 
   // Show the mobile action sheet for a text selection.
   const showMobileSheet = useCallback(

@@ -1210,7 +1210,7 @@ export function Chat({
         );
       })()}
       {onAddTag && (
-        <SelectionPopup onAdd={onAddTag} onAdvSync={onAdvSync} />
+        <SelectionPopup onAdd={onAddTag} onAdvSync={onAdvSync} chatScrollRef={scrollRef} />
       )}
       {rewindTarget && (
         <RewindPopover
